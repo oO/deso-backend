@@ -126,11 +126,12 @@ type APIBaseResponse struct {
 	Transactions []*TransactionResponse
 }
 
-func _headerToResponse(header *lib.MsgDeSoHeader, hash string) *HeaderResponse {
+func _headerToResponse(header *lib.MsgDeSoHeader, hash string, count uint64) *HeaderResponse {
 	return &HeaderResponse{
 		BlockHashHex:             hash,
 		Version:                  header.Version,
 		PrevBlockHashHex:         header.PrevBlockHash.String(),
+		TransactionCount:		  count,
 		TransactionMerkleRootHex: header.TransactionMerkleRoot.String(),
 		TstampSecs:               header.TstampSecs,
 		Height:                   header.Height,
@@ -161,7 +162,10 @@ func (fes *APIServer) APIBase(ww http.ResponseWriter, rr *http.Request) {
 	}
 
 	res := &APIBaseResponse{
-		Header: _headerToResponse(blockMsg.Header, blockNode.Hash.String()),
+		Header: _headerToResponse(blockMsg.Header, 
+			                      blockNode.Hash.String(),
+			                      uint64(len(blockMsg.Txns)),
+			                     ),
 	}
 	for _, txn := range blockMsg.Txns {
 		// Look up the metadata for each transaction.
@@ -1145,6 +1149,8 @@ type HeaderResponse struct {
 	Version uint32
 	// Hash of the previous block in the chain.
 	PrevBlockHashHex string
+	// The number of transactions contained within the block
+	TransactionCount uint64
 	// The merkle root of all the transactions contained within the block.
 	TransactionMerkleRootHex string
 	// The unix timestamp (in seconds) specifying when this block was
@@ -1229,7 +1235,10 @@ func (fes *APIServer) APIBlock(ww http.ResponseWriter, rr *http.Request) {
 	}
 
 	res := &APIBlockResponse{
-		Header: _headerToResponse(blockMsg.Header, blockHash.String()),
+		Header: _headerToResponse(blockMsg.Header,
+			                      blockHash.String(), 
+			                      uint64(len(blockMsg.Txns)), 
+			                     ),
 	}
 	if blockRequest.FullBlock {
 		for _, txn := range blockMsg.Txns {
