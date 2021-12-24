@@ -1201,9 +1201,12 @@ func (fes *APIServer) APIBlock(ww http.ResponseWriter, rr *http.Request) {
 		copy(blockHash[:], hashBytes[:])
 
 	} else {
+		// Return the tip if height is not specified
+		if blockRequest.Height == -1 {
+			blockRequest.Height = int64(numBlocks - 1)
 		// Find the block node with the corresponding height on the best chain.
-		if blockRequest.Height >= int64(numBlocks) || blockRequest.Height < 0 {
-			maxHeight := len(fes.blockchain.BestChain()) - 1
+		} else if blockRequest.Height >= int64(numBlocks) || blockRequest.Height < 0 {
+			maxHeight := numBlocks - 1
 
 			APIAddError(ww, fmt.Sprintf("APIBlockRequest: Height requested "+
 				"%d must be >= 0 and <= "+
