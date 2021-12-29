@@ -46,6 +46,8 @@ const (
 	RoutePathAPINodeInfo = "/api/v1/node-info"
 	// RoutePathAPIBlock ...
 	RoutePathAPIBlock = "/api/v1/block"
+	// RoutePathAPIHeaders ...
+	RoutePathAPIHeaders = "/api/v1/headers"
 )
 
 // APIRoutes returns the routes for the public-facing API.
@@ -98,6 +100,13 @@ func (fes *APIServer) APIRoutes() []Route {
 			[]string{"POST", "OPTIONS"},
 			RoutePathAPIBlock,
 			fes.APIBlock,
+			PublicAccess, // CheckSecret
+		},
+		{
+			"APIHeaders",
+			[]string{"POST", "OPTIONS"},
+			RoutePathAPIHeaders,
+			fes.APIHeaders,
 			PublicAccess, // CheckSecret
 		},
 	}
@@ -1257,6 +1266,109 @@ func (fes *APIServer) APIBlock(ww http.ResponseWriter, rr *http.Request) {
 		return
 	}
 }
+
+// APIHeadersRequest specifies the params for a call to the
+// APIHeaders endpoint.
+type APIHeadersRequest struct {
+	// Block height. 0 corresponds to the genesis block. An error will be
+	// returned if the height exceeds the tip. This field is ignored if HashHex is
+	// set. Special case -1 returns the tip
+	Height int64
+	// How many headers to return
+	Count int64
+	// Reversed = true, starts from the tip and counts backward
+	Reversed bool
+}
+
+// APIHeadersResponse specifies the response for a call to the
+// APIHeaders endpoint.
+type APIHeadersResponse struct {
+	// Blank if successful. Otherwise, contains a description of the
+	// error that occurred.
+	Error string
+
+	// Array of Block Headers.
+	Headers [] *HeaderResponse
+
+}
+
+// APIHeaders returns a list of Block Headers in a single query
+func (fes *APIServer) APIHeaders(ww http.ResponseWriter, rr *http.Request) {
+	// Decode the request
+	decoder := json.NewDecoder(io.LimitReader(rr.Body, MaxRequestBodySizeBytes))
+	headersRequest := APIHeadersRequest{}
+	if err := decoder.Decode(&headersRequest); err != nil {
+		APIAddError(ww, fmt.Sprintf("APIHeadersRequest: Problem parsing request body: %v", err))
+		return
+	}
+
+	// Get the index for the tip of the chain ( latest block )
+	var lastBlockIndex int64 = int64(len(fes.blockchain.BestChain()) -1)
+
+	// Return the tip if height is -1 ( Is there a way to make this the default? )
+	if headersRequest.Height == -1 {
+		headersRequest.Height = lastBlockIndex
+	}
+	// Count defaults to 100 headers
+	if headersRequest.Count == 0 {
+		headersRequest.Count = 100
+	}
+
+	var startValue int64
+	var endValue int64
+	var direction int64
+
+	if headersRequest.Reversed == true {
+		// Count backward ( tip to genesis )
+		startValue = headersRequest.Height
+		endValue =  headersRequest.Height - headersRequest.Count
+		direction = -1
+	} else {
+		// Count forward ( genesis to tip )
+		startValue = headersRequest.Height
+		endValue =  headersRequest.Height  + headersRequest.Count
+		direction = +1
+	}
+
+	// Initialize the Response Object
+	res := &APIHeadersResponse{}
+
+	// Get all the headers we need
+	for i := startValue; i != endValue; i += direction {
+
+		// Skip if i < 0 or > tip
+		if i > lastBlockIndex || i < 0 { break }
+
+
+		blockHash := fes.blockchain.BestChain()[i].Hash
+		// Take the hash computed from above and find the corresponding block.
+		blockMsg, err := lib.GetBlock(blockHash, fes.blockchain.DB())
+		if err != nil {
+			APIAddError(ww, fmt.Sprintf("APIHeaders: Problem fetching block: %v", err))
+			return
+		}
+		if blockMsg == nil {
+			APIAddError(ww, fmt.Sprintf("APIHeaders: Block with hash %v not found", blockHash))
+			return
+		}
+
+		res.Headers = append( res.Headers,
+			_headerToResponse(blockMsg.Header,
+			                  blockHash.String(), 
+			                  uint64(len(blockMsg.Txns)), 
+			                 ))
+	}
+
+	if err := json.NewEncoder(ww).Encode(res); err != nil {
+		APIAddError(ww, fmt.Sprintf("APIHeaders: Problem encoding response "+
+			"as JSON: %v", err))
+		return
+	}		
+}
+
+
+
+
 
 // TODO: This is a somewhat redundant version of processTransaction It exists
 // because the API needed to cut out the derivation of the public key from the
