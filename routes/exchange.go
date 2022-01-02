@@ -1286,6 +1286,8 @@ type APIHeadersResponse struct {
 	// Blank if successful. Otherwise, contains a description of the
 	// error that occurred.
 	Error string
+	// Always return the current maximum block height
+	MaxBlockHeight int64
 
 	// Array of Block Headers.
 	Headers [] *HeaderResponse
@@ -1331,7 +1333,11 @@ func (fes *APIServer) APIHeaders(ww http.ResponseWriter, rr *http.Request) {
 	}
 
 	// Initialize the Response Object
-	res := &APIHeadersResponse{}
+	res := &APIHeadersResponse{
+		MaxBlockHeight: lastBlockIndex,
+	}
+
+	res.MaxBlockHeight = lastBlockIndex
 
 	// Get all the headers we need
 	for i := startValue; i != endValue; i += direction {
@@ -1339,7 +1345,7 @@ func (fes *APIServer) APIHeaders(ww http.ResponseWriter, rr *http.Request) {
 		// Skip if i < 0 or > tip
 		if i > lastBlockIndex || i < 0 { break }
 
-
+		// TODO: there is a GetBlockAtHeight(i) function...
 		blockHash := fes.blockchain.BestChain()[i].Hash
 		// Take the hash computed from above and find the corresponding block.
 		blockMsg, err := lib.GetBlock(blockHash, fes.blockchain.DB())
