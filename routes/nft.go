@@ -20,6 +20,8 @@ type NFTEntryResponse struct {
 	SerialNumber               uint64                `safeForLogging:"true"`
 	IsForSale                  bool                  `safeForLogging:"true"`
 	IsPending                  bool                  `safeForLogging:"true"`
+	IsBuyNow                   bool                  `safeForLogging:"true"`
+	BuyNowPriceNanos           uint64                `safeForLogging:"true"`
 	MinBidAmountNanos          uint64                `safeForLogging:"true"`
 	LastAcceptedBidAmountNanos uint64                `safeForLogging:"true"`
 
@@ -31,12 +33,15 @@ type NFTEntryResponse struct {
 }
 
 type NFTCollectionResponse struct {
-	ProfileEntryResponse   *ProfileEntryResponse `json:",omitempty"`
-	PostEntryResponse      *PostEntryResponse    `json:",omitempty"`
-	HighestBidAmountNanos  uint64                `safeForLogging:"true"`
-	LowestBidAmountNanos   uint64                `safeForLogging:"true"`
-	NumCopiesForSale       uint64                `safeForLogging:"true"`
-	AvailableSerialNumbers []uint64              `safeForLogging:"true"`
+	ProfileEntryResponse    *ProfileEntryResponse `json:",omitempty"`
+	PostEntryResponse       *PostEntryResponse    `json:",omitempty"`
+	HighestBidAmountNanos   uint64                `safeForLogging:"true"`
+	LowestBidAmountNanos    uint64                `safeForLogging:"true"`
+	HighestBuyNowPriceNanos *uint64               `safeForLogging:"true"`
+	LowestBuyNowPriceNanos  *uint64               `safeForLogging:"true"`
+	NumCopiesForSale        uint64                `safeForLogging:"true"`
+	NumCopiesBuyNow         uint64                `safeForLogging:"true"`
+	AvailableSerialNumbers  []uint64              `safeForLogging:"true"`
 }
 
 type NFTBidEntryResponse struct {
@@ -65,6 +70,8 @@ type CreateNFTRequest struct {
 	HasUnlockable                  bool   `safeForLogging:"true"`
 	IsForSale                      bool   `safeForLogging:"true"`
 	MinBidAmountNanos              int    `safeForLogging:"true"`
+	IsBuyNow                       bool   `safeForLogging:"true"`
+	BuyNowPriceNanos               uint64 `safeForLogging:"true"`
 
 	MinFeeRateNanosPerKB uint64 `safeForLogging:"true"`
 
@@ -132,6 +139,13 @@ func (fes *APIServer) CreateNFT(ww http.ResponseWriter, req *http.Request) {
 			"CreateNFT: NFTRoyaltyToCoinBasisPoints must be between %d and %d, received: %d",
 			0, fes.Params.MaxNFTRoyaltyBasisPoints, requestData.NFTRoyaltyToCoinBasisPoints))
 		return
+	} else if !requestData.IsBuyNow && requestData.BuyNowPriceNanos > 0 {
+		_AddBadRequestError(ww, fmt.Sprint("CreateNFT: cannot set BuyNowPriceNanos if NFT is not going to be "+
+			"sold in a 'Buy Now' fashion"))
+		return
+	} else if requestData.IsBuyNow && requestData.BuyNowPriceNanos < uint64(requestData.MinBidAmountNanos) {
+		_AddBadRequestError(ww, fmt.Sprint("CreateNFT: cannot set BuyNowPriceNanos less than MinBidAmountNanos"))
+		return
 	}
 
 	// Get the PostHash for the NFT we are creating.
@@ -172,6 +186,8 @@ func (fes *APIServer) CreateNFT(ww http.ResponseWriter, req *http.Request) {
 		nftFee,
 		uint64(requestData.NFTRoyaltyToCreatorBasisPoints),
 		uint64(requestData.NFTRoyaltyToCoinBasisPoints),
+		requestData.IsBuyNow,
+		requestData.BuyNowPriceNanos,
 		requestData.MinFeeRateNanosPerKB, fes.backendServer.GetMempool(), additionalOutputs)
 	if err != nil {
 		_AddBadRequestError(ww, fmt.Sprintf("CreateNFT: Problem creating transaction: %v", err))
@@ -206,6 +222,8 @@ type UpdateNFTRequest struct {
 	SerialNumber                int    `safeForLogging:"true"`
 	IsForSale                   bool   `safeForLogging:"true"`
 	MinBidAmountNanos           int    `safeForLogging:"true"`
+	IsBuyNow                    bool   `safeForLogging:"true"`
+	BuyNowPriceNanos            uint64 `safeForLogging:"true"`
 
 	MinFeeRateNanosPerKB uint64 `safeForLogging:"true"`
 
@@ -257,6 +275,13 @@ func (fes *APIServer) UpdateNFT(ww http.ResponseWriter, req *http.Request) {
 		_AddBadRequestError(ww, fmt.Sprintf(
 			"UpdateNFT: MinBidAmountNanos must be >= 0, got: %d", requestData.MinBidAmountNanos))
 		return
+	} else if !requestData.IsBuyNow && requestData.BuyNowPriceNanos > 0 {
+		_AddBadRequestError(ww, fmt.Sprint("UpdateNFT: cannot set BuyNowPriceNanos if NFT is not going to be "+
+			"sold in a 'Buy Now' fashion"))
+		return
+	} else if requestData.IsBuyNow && requestData.BuyNowPriceNanos < uint64(requestData.MinBidAmountNanos) {
+		_AddBadRequestError(ww, fmt.Sprint("UpdateNFT: cannot set BuyNowPriceNanos less than MinBidAmountNanos"))
+		return
 	}
 
 	// Get the PostHash for the NFT.
@@ -307,6 +332,8 @@ func (fes *APIServer) UpdateNFT(ww http.ResponseWriter, req *http.Request) {
 		uint64(requestData.SerialNumber),
 		requestData.IsForSale,
 		uint64(requestData.MinBidAmountNanos),
+		requestData.IsBuyNow,
+		requestData.BuyNowPriceNanos,
 		requestData.MinFeeRateNanosPerKB, fes.backendServer.GetMempool(), additionalOutputs)
 	if err != nil {
 		_AddBadRequestError(ww, fmt.Sprintf("UpdateNFT: Problem creating transaction: %v", err))
@@ -797,7 +824,7 @@ type GetNFTsForUserRequest struct {
 	ReaderPublicKeyBase58Check string `safeForLogging:"true"`
 	IsForSale                  *bool  `safeForLogging:"true"`
 	// Ignored if IsForSale is provided
-	IsPending                  *bool  `safeForLogging:"true"`
+	IsPending *bool `safeForLogging:"true"`
 }
 
 type NFTEntryAndPostEntryResponse struct {
@@ -1274,10 +1301,11 @@ func (fes *APIServer) _nftEntryToResponse(nftEntry *lib.NFTEntry, postEntryRespo
 		SerialNumber:              nftEntry.SerialNumber,
 		IsForSale:                 nftEntry.IsForSale,
 		IsPending:                 nftEntry.IsPending,
+		IsBuyNow:                  nftEntry.IsBuyNow,
 		MinBidAmountNanos:         nftEntry.MinBidAmountNanos,
-
-		HighestBidAmountNanos: highBid,
-		LowestBidAmountNanos:  lowBid,
+		BuyNowPriceNanos:          nftEntry.BuyNowPriceNanos,
+		HighestBidAmountNanos:     highBid,
+		LowestBidAmountNanos:      lowBid,
 
 		EncryptedUnlockableText:       encryptedUnlockableText,
 		LastOwnerPublicKeyBase58Check: lastOwnerPublicKeyBase58Check,
@@ -1302,6 +1330,9 @@ func (fes *APIServer) _nftEntryToNFTCollectionResponse(
 	postEntryResponse.ProfileEntryResponse = profileEntryResponse
 
 	var numCopiesForSale uint64
+	var numCopiesBuyNow uint64
+	var highBuyNowPriceNanos *uint64
+	var lowBuyNowPriceNanos *uint64
 	serialNumbersForSale := []uint64{}
 	for ii := uint64(1); ii <= postEntryResponse.NumNFTCopies; ii++ {
 		nftKey := lib.MakeNFTKey(nftEntry.NFTPostHash, ii)
@@ -1309,6 +1340,17 @@ func (fes *APIServer) _nftEntryToNFTCollectionResponse(
 		if nftEntryii != nil && nftEntryii.IsForSale {
 			if nftEntryii.OwnerPKID != readerPKID {
 				serialNumbersForSale = append(serialNumbersForSale, ii)
+				if nftEntryii.IsBuyNow {
+					if highBuyNowPriceNanos == nil || nftEntryii.BuyNowPriceNanos > *highBuyNowPriceNanos {
+						highBuyNowPriceNanos = &nftEntryii.BuyNowPriceNanos
+					}
+					if lowBuyNowPriceNanos == nil || nftEntryii.BuyNowPriceNanos < *lowBuyNowPriceNanos {
+						lowBuyNowPriceNanos = &nftEntryii.BuyNowPriceNanos
+					}
+				}
+			}
+			if nftEntryii.IsBuyNow {
+				numCopiesBuyNow++
 			}
 			numCopiesForSale++
 		}
@@ -1318,12 +1360,15 @@ func (fes *APIServer) _nftEntryToNFTCollectionResponse(
 		nftEntry.NFTPostHash)
 
 	return &NFTCollectionResponse{
-		ProfileEntryResponse:   profileEntryResponse,
-		PostEntryResponse:      postEntryResponse,
-		HighestBidAmountNanos:  highestBidAmountNanos,
-		LowestBidAmountNanos:   lowestBidAmountNanos,
-		NumCopiesForSale:       numCopiesForSale,
-		AvailableSerialNumbers: serialNumbersForSale,
+		ProfileEntryResponse:    profileEntryResponse,
+		PostEntryResponse:       postEntryResponse,
+		HighestBidAmountNanos:   highestBidAmountNanos,
+		LowestBidAmountNanos:    lowestBidAmountNanos,
+		HighestBuyNowPriceNanos: highBuyNowPriceNanos,
+		LowestBuyNowPriceNanos:  lowBuyNowPriceNanos,
+		NumCopiesForSale:        numCopiesForSale,
+		NumCopiesBuyNow:         numCopiesBuyNow,
+		AvailableSerialNumbers:  serialNumbersForSale,
 	}
 }
 
@@ -1816,11 +1861,11 @@ type GetNFTsCreatedByPublicKeyRequest struct {
 	// PostHashHex of the last NFT from the previous page
 	LastPostHashHex string `safeForLogging:"true"`
 	// Number of records to fetch
-	NumToFetch    uint64 `safeForLogging:"true"`
+	NumToFetch uint64 `safeForLogging:"true"`
 }
 
 type NFTDetails struct {
-	NFTEntryResponses []*NFTEntryResponse
+	NFTEntryResponses     []*NFTEntryResponse
 	NFTCollectionResponse *NFTCollectionResponse
 }
 
@@ -1934,7 +1979,7 @@ func (fes *APIServer) GetNFTsCreatedByPublicKey(ww http.ResponseWriter, req *htt
 			nftEntryResponses = append(nftEntryResponses, fes._nftEntryToResponse(nftEntry, nil, utxoView, false, readerPKID))
 		}
 		res.NFTs = append(res.NFTs, NFTDetails{
-			NFTEntryResponses: nftEntryResponses,
+			NFTEntryResponses:     nftEntryResponses,
 			NFTCollectionResponse: fes._nftEntryToNFTCollectionResponse(nftEntries[0], post.PosterPublicKey, postEntryResponse, utxoView, readerPKID),
 		})
 	}
