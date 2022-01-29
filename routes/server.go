@@ -57,6 +57,8 @@ const (
 	RoutePathTransferCreatorCoin      = "/api/v0/transfer-creator-coin"
 	RoutePathSendDiamonds             = "/api/v0/send-diamonds"
 	RoutePathAuthorizeDerivedKey      = "/api/v0/authorize-derived-key"
+	RoutePathDAOCoin                  = "/api/v0/dao-coin"
+	RoutePathTransferDAOCoin          = "/api/v0/transfer-dao-coin"
 	RoutePathAppendExtraData          = "/api/v0/append-extra-data"
 	RoutePathGetTransactionSpending   = "/api/v0/get-transaction-spending"
 
@@ -79,6 +81,8 @@ const (
 	RoutePathGetUserDerivedKeys          = "/api/v0/get-user-derived-keys"
 	RoutePathDeletePII                   = "/api/v0/delete-pii"
 	RoutePathGetUserMetadata             = "/api/v0/get-user-metadata"
+	RoutePathGetUsernameForPublicKey     = "/api/v0/get-user-name-for-public-key"
+	RoutePathGetPublicKeyForUsername     = "/api/v0/get-public-key-for-user-name"
 
 	// post.go
 	RoutePathGetPostsStateless      = "/api/v0/get-posts-stateless"
@@ -117,10 +121,13 @@ const (
 	RoutePathGetVideoStatus   = "/api/v0/get-video-status"
 
 	// message.go
-	RoutePathSendMessageStateless    = "/api/v0/send-message-stateless"
-	RoutePathGetMessagesStateless    = "/api/v0/get-messages-stateless"
-	RoutePathMarkContactMessagesRead = "/api/v0/mark-contact-messages-read"
-	RoutePathMarkAllMessagesRead     = "/api/v0/mark-all-messages-read"
+	RoutePathSendMessageStateless       = "/api/v0/send-message-stateless"
+	RoutePathGetMessagesStateless       = "/api/v0/get-messages-stateless"
+	RoutePathMarkContactMessagesRead    = "/api/v0/mark-contact-messages-read"
+	RoutePathMarkAllMessagesRead        = "/api/v0/mark-all-messages-read"
+	RoutePathRegisterMessagingGroupKey = "/api/v0/register-messaging-group-key"
+	RoutePathGetAllMessagingGroupKeys   = "/api/v0/get-all-messaging-group-keys"
+	RoutePathCheckPartyMessagingKeys    = "/api/v0/check-party-messaging-keys"
 
 	// verify.go
 	RoutePathSendPhoneNumberVerificationText   = "/api/v0/send-phone-number-verification-text"
@@ -349,6 +356,12 @@ type APIServer struct {
 
 	// map of country name to sign up bonus data
 	AllCountryLevelSignUpBonuses map[string]CountrySignUpBonusResponse
+
+	// Frequently accessed data from global state
+	USDCentsToDESOReserveExchangeRate uint64
+	BuyDESOFeeBasisPoints uint64
+	JumioUSDCents uint64
+	JumioKickbackUSDCents uint64
 
 	// Signals that the frontend server is in a stopped state
 	quit chan struct{}
@@ -818,6 +831,20 @@ func (fes *APIServer) NewRouter() *muxtrace.Router {
 			PublicAccess,
 		},
 		{
+			"DAOCoin",
+			[]string{"POST", "OPTIONS"},
+			RoutePathDAOCoin,
+			fes.DAOCoin,
+			PublicAccess,
+		},
+		{
+			"TransferDAOCoin",
+			[]string{"POST", "OPTIONS"},
+			RoutePathTransferDAOCoin,
+			fes.TransferDAOCoin,
+			PublicAccess,
+		},
+		{
 			"AppendExtraData",
 			[]string{"POST", "OPTIONS"},
 			RoutePathAppendExtraData,
@@ -948,6 +975,20 @@ func (fes *APIServer) NewRouter() *muxtrace.Router {
 			[]string{"GET"},
 			RoutePathGetUserMetadata + "/{publicKeyBase58Check:[0-9a-zA-Z]{54,55}}",
 			fes.GetUserMetadata,
+			PublicAccess,
+		},
+		{
+			"GetUsernameForPublicKey",
+			[]string{"GET"},
+			RoutePathGetUsernameForPublicKey + "/{publicKeyBase58Check:[0-9a-zA-Z]{54,55}}",
+			fes.GetUsernameForPublicKey,
+			PublicAccess,
+		},
+		{
+			"GetPublicKeyForUsername",
+			[]string{"GET"},
+			RoutePathGetPublicKeyForUsername + "/{username:[a-zA-Z0-9_]{1,26}",
+			fes.GetPublicKeyForUsername,
 			PublicAccess,
 		},
 		// Jumio Routes
@@ -1459,6 +1500,27 @@ func (fes *APIServer) NewRouter() *muxtrace.Router {
 			[]string{"POST", "OPTIONS"},
 			RoutePathMarkAllMessagesRead,
 			fes.MarkAllMessagesRead,
+			PublicAccess,
+		},
+		{
+			"RegisterMessagingGroupKey",
+			[]string{"POST", "OPTIONS"},
+			RoutePathRegisterMessagingGroupKey,
+			fes.RegisterMessagingGroupKey,
+			PublicAccess,
+		},
+		{
+			"GetAllMessagingGroupKeys",
+			[]string{"POST", "OPTIONS"},
+			RoutePathGetAllMessagingGroupKeys,
+			fes.GetAllMessagingGroupKeys,
+			PublicAccess,
+		},
+		{
+			"CheckPartyMessagingKeys",
+			[]string{"POST", "OPTIONS"},
+			RoutePathCheckPartyMessagingKeys,
+			fes.CheckPartyMessagingKeys,
 			PublicAccess,
 		},
 
@@ -2053,6 +2115,10 @@ func (fes *APIServer) SetGlobalStateCache() {
 	fes.SetGraylistedPKIDMap(utxoView)
 	fes.SetGlobalFeedPostHashes()
 	fes.SetAllCountrySignUpBonusMetadata()
+	fes.SetUSDCentsToDeSoReserveExchangeRateFromGlobalState()
+	fes.SetBuyDeSoFeeBasisPointsResponseFromGlobalState()
+	fes.SetJumioUSDCents()
+	fes.SetJumioKickbackUSDCents()
 }
 
 func (fes *APIServer) SetVerifiedUsernameMap() {
