@@ -1286,9 +1286,6 @@ type APIHeadersResponse struct {
 	// Blank if successful. Otherwise, contains a description of the
 	// error that occurred.
 	Error string
-	// Always return the current maximum block height
-	MaxBlockHeight int64
-
 	// Array of Block Headers.
 	Headers [] *HeaderResponse
 
@@ -1333,11 +1330,7 @@ func (fes *APIServer) APIHeaders(ww http.ResponseWriter, rr *http.Request) {
 	}
 
 	// Initialize the Response Object
-	res := &APIHeadersResponse{
-		MaxBlockHeight: lastBlockIndex,
-	}
-
-	res.MaxBlockHeight = lastBlockIndex
+	res := &APIHeadersResponse{}
 
 	// Get all the headers we need
 	for i := startValue; i != endValue; i += direction {
